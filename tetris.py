@@ -1,5 +1,6 @@
 import random
-
+import time
+import threading
 class Tetromino:
     """Represents a tetris piece with its different rotations"""
     
@@ -87,6 +88,7 @@ class Tetris:
         self.score = 0
         self.linesCleared = 0
         self.gameOver = False
+        self.gameRunning = False
         self.SpawnNewPiece()
     
     def SpawnNewPiece(self):
@@ -206,8 +208,11 @@ class Tetris:
             
             # Spawn next piece
             self.SpawnNewPiece()
-    
+
+
     def Render(self):
+
+    
         """Renders the current game state"""
         # Create a copy of the board
         render_board = [row[:] for row in self.board]
@@ -235,24 +240,54 @@ class Tetris:
             print("\n" + "=" * 50)
             print("GAME OVER!")
             print("=" * 50)
+    
+    def tick_loop(self):
+        """Runs the game tick every second, independent of input"""
+        while self.gameRunning and not self.gameOver:
+            time.sleep(1)  # tick every 1 second
+            self.Tick()
+            self.Render()
 
 
 def main():
     """Main game loop"""
     import sys
-    import termios
-    import tty
-    
-    def GetChar():
-        """Gets a single character from stdin without Enter"""
-        fd = sys.stdin.fileno()
-        old_settings = termios.tcgetattr(fd)
-        try:
-            tty.setraw(sys.stdin.fileno())
-            ch = sys.stdin.read(1)
-        finally:
-            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-        return ch
+    import os
+
+    if os.name == 'nt':
+        import msvcrt
+
+        def GetChar():
+            """Gets a single character from stdin without Enter (Windows)"""
+            ch = msvcrt.getch()
+            # Decode bytes to string if necessary (Python 3)
+            if isinstance(ch, bytes):
+                ch = ch.decode('utf-8', errors='ignore')
+            return ch
+
+    else:
+        import termios
+        import tty
+
+        def GetChar():
+            """Gets a single character from stdin without Enter (Unix)"""
+            fd = sys.stdin.fileno()
+            old_settings = termios.tcgetattr(fd)
+            try:
+                tty.setraw(fd)
+                ch = sys.stdin.read(1)
+            finally:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+            return ch
+
+    # Example usage:
+    print("Press any key (q to quit):")
+    while True:
+        c = GetChar()
+        print(f"You pressed: {c}")
+        if c.lower() == 'q':
+            break
+
     
     game = Tetris()
     
@@ -271,18 +306,17 @@ def main():
     print("  O = Orange (L-piece), . = Empty")
     print("\nPress Enter to start...")
     input()
-    
-    tick_count = 0
+
+
+    game.gameRunning = True
+    tick_thread = threading.Thread(target= game.tick_loop, daemon=True)
+    tick_thread.start()
     
     while not game.gameOver:
-        # Render the game
-        game.Render()
         print("\nNext move (a/d/s/w/q): ", end='', flush=True)
-        
-        # Get user input (single character)
         move = GetChar().lower()
-        print(move)  # Echo the character
-        
+        print(move)  # Echo input
+
         if move == 'q':
             print("\nQuitting game...")
             break
@@ -294,13 +328,15 @@ def main():
             game.TryMove(0, 1)
         elif move == 'w':
             game.TryRotate()
-        
-        # Game tick (auto-drop)
-        tick_count += 1
-        if tick_count % 3 == 0:  # Drop every 3 ticks
-            game.Tick()
-    
-    # Final render
+
+        # Render after each input too
+        game.Render()
+
+    # Stop ticking thread
+    game.gameRunning = False
+    tick_thread.join(timeout=1)
+
+    print("\nFinal game state:")
     game.Render()
 
 
